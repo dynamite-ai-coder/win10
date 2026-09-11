@@ -46,8 +46,10 @@ resources are for Docker, QEMU overhead, ngrok, the status server and the OS.
 6. **Add environment variables** from the table below
    (*Environment* tab). Keep `KVM_TEST_ONLY=true` and `VM_AUTOSTART=false`
    for the first deploy.
-7. **Add the ngrok secret**: `NGROK_AUTHTOKEN` (mark as secret). You can leave
-   `NGROK_ENABLED=false` until Windows is installed.
+7. **Add the ngrok secret**: `NGROK_AUTHTOKEN` (mark as secret). This is the
+   **agent authtoken** from <https://dashboard.ngrok.com/get-started/your-authtoken>,
+   not an ngrok API key (`ak_...`). You can leave `NGROK_ENABLED=false` until
+   Windows is installed.
 8. **Deploy** (*Manual Deploy → Deploy latest commit* or save the settings).
 9. **Examine the logs**: look for `[BOOT]`, `[KVM]`, `[DISK]`, `[QEMU]`,
    `[NGROK]`, `[VM]` lines.
@@ -88,9 +90,19 @@ resources are for Docker, QEMU overhead, ngrok, the status server and the OS.
 
 ## 2. Configure the service via the Render API
 
-Replace `rnd_...` with your API key. All examples use `curl`.
+Replace `rnd_...` with your API key (Dashboard → Account Settings → API Keys).
+All examples use `curl`. The service is Git-backed, so the repository must
+already be connected to your Render workspace via the Render GitHub App.
 
-### 2.1 List services and find the service ID
+### 2.1 Find your workspace ID
+
+```bash
+curl -s -H "Authorization: Bearer $RENDER_API_KEY" \
+  "https://api.render.com/v1/owners?limit=20"
+```
+
+Use the `id` of the desired workspace (starts with `tea-`) as `OWNER_ID`.
+You can also list existing services and their IDs:
 
 ```bash
 curl -s -H "Authorization: Bearer $RENDER_API_KEY" \
@@ -99,6 +111,9 @@ curl -s -H "Authorization: Bearer $RENDER_API_KEY" \
 
 ### 2.2 Create the service (if it does not exist)
 
+The API supports attaching the persistent disk in the same request
+(`serviceDetails.disk`). `plan` accepts `8c-32g` for private services.
+
 ```bash
 curl -s -X POST "https://api.render.com/v1/services" \
   -H "Authorization: Bearer $RENDER_API_KEY" \
@@ -106,15 +121,16 @@ curl -s -X POST "https://api.render.com/v1/services" \
   -d '{
     "type": "private_service",
     "name": "win10",
-    "ownerId": "YOUR_OWNER_ID",
+    "ownerId": "OWNER_ID",
     "repo": "https://github.com/dynamite-ai-coder/win10",
     "branch": "main",
     "autoDeploy": "yes",
     "serviceDetails": {
-      "env": "docker",
+      "runtime": "docker",
       "region": "frankfurt",
       "plan": "8c-32g",
       "numInstances": 1,
+      "maxShutdownDelaySeconds": 300,
       "envSpecificDetails": {
         "dockerfilePath": "./Dockerfile",
         "dockerContext": "."
@@ -123,16 +139,19 @@ curl -s -X POST "https://api.render.com/v1/services" \
         "name": "win10-data",
         "mountPath": "/var/lib/windows",
         "sizeGB": 150
-      },
-      "envVars": [
-        { "key": "KVM_REQUIRED", "value": "true" },
-        { "key": "ENABLE_TCG_FALLBACK", "value": "false" },
-        { "key": "KVM_TEST_ONLY", "value": "true" },
-        { "key": "VM_AUTOSTART", "value": "false" }
-      ]
-    }
+      }
+    },
+    "envVars": [
+      { "key": "KVM_REQUIRED", "value": "true" },
+      { "key": "ENABLE_TCG_FALLBACK", "value": "false" },
+      { "key": "KVM_TEST_ONLY", "value": "true" },
+      { "key": "VM_AUTOSTART", "value": "false" }
+    ]
   }'
 ```
+
+The response contains `service.id` (for example `srv-xxxxxxxx`). Copy it into
+`SERVICE_ID` for the next steps.
 
 ### 2.3 Update an existing service (plan, Docker settings)
 
@@ -144,6 +163,7 @@ curl -s -X PATCH "https://api.render.com/v1/services/SERVICE_ID" \
     "serviceDetails": {
       "plan": "8c-32g",
       "numInstances": 1,
+      "maxShutdownDelaySeconds": 300,
       "envSpecificDetails": {
         "dockerfilePath": "./Dockerfile",
         "dockerContext": "."
@@ -152,7 +172,7 @@ curl -s -X PATCH "https://api.render.com/v1/services/SERVICE_ID" \
   }'
 ```
 
-### 2.4 Attach the 150 GB persistent disk
+### 2.4 Attach the 150 GB persistent disk (if not created in 2.2)
 
 ```bash
 curl -s -X POST "https://api.render.com/v1/disks" \
@@ -165,6 +185,8 @@ curl -s -X POST "https://api.render.com/v1/disks" \
     "sizeGB": 150
   }'
 ```
+
+The service must be redeployed after adding a disk.
 
 ### 2.5 Set environment variables (including secrets)
 
@@ -182,17 +204,35 @@ curl -s -X PUT "https://api.render.com/v1/services/SERVICE_ID/env-vars" \
   ]'
 ```
 
+`STATUS_API_TOKEN` can be generated server-side instead:
+
+```bash
+curl -s -X PUT "https://api.render.com/v1/services/SERVICE_ID/env-vars" \
+  -H "Authorization: Bearer $RENDER_API_KEY" \
+  -H "Content-Type: application/json" \
+  -d '[
+    { "key": "VM_MEMORY_MB", "value": "22528" },
+    { "key": "VM_CPUS", "value": "6" },
+    { "key": "KVM_REQUIRED", "value": "true" },
+    { "key": "STATUS_API_TOKEN", "generateValue": true }
+  ]'
+```
+
 ### 2.6 Deploy and follow the logs
 
 ```bash
-# trigger a deploy
+# trigger a deploy (omit body fields for the defaults)
 curl -s -X POST "https://api.render.com/v1/services/SERVICE_ID/deploys" \
   -H "Authorization: Bearer $RENDER_API_KEY" \
   -H "Content-Type: application/json" -d '{"clearCache": "do_not_clear"}'
 
-# recent logs
+# deploy status
 curl -s -H "Authorization: Bearer $RENDER_API_KEY" \
-  "https://api.render.com/v1/logs?ownerId=OWNER_ID&resourceId=SERVICE_ID&limit=100"
+  "https://api.render.com/v1/services/SERVICE_ID/deploys?limit=1"
+
+# recent application logs (ISO-8601 timestamps; resource, not resourceId)
+curl -s -H "Authorization: Bearer $RENDER_API_KEY" \
+  "https://api.render.com/v1/logs?ownerId=OWNER_ID&resource=SERVICE_ID&limit=100&direction=backward"
 ```
 
 ---
