@@ -1,0 +1,54 @@
+# =============================================================================
+# config/qemu.conf.example
+#
+# Reference QEMU configuration for the Windows 10 VM. This file documents how
+# each environment variable maps to the generated QEMU command line. The
+# scripts generate the command automatically - do not edit QEMU args here,
+# this is documentation + a ready-to-source environment template.
+#
+# Copy to config/qemu.conf and source it before running scripts, e.g.:
+#   set -a; . config/qemu.conf; set +a; scripts/start-vm.sh
+# =============================================================================
+
+# --- resources --------------------------------------------------------------
+VM_MEMORY_MB=22528          # -m 22528
+VM_CPUS=6                   # -smp 6,sockets=1,cores=6,threads=1
+VM_NAME=windows10           # -name guest=windows10,process=windows10
+VM_MACHINE=q35              # -machine q35,accel=kvm|tcg
+VM_CPU_MODEL=host           # -cpu host (KVM only)
+VM_CPU_MODEL_TCG=max        # -cpu max (TCG fallback only)
+
+# --- storage ----------------------------------------------------------------
+VM_DATA_DIR=/var/lib/windows
+VM_DISK=/var/lib/windows/windows10.qcow2
+VM_DISK_SIZE_GB=120
+VM_DISK_AUTOCREATE=true
+VM_DISK_BUS=virtio          # virtio-blk-pci (needs virtio-win drivers) or sata
+VM_DISK_CACHE=writeback
+WINDOWS_ISO=/var/lib/windows/iso/windows10.iso
+VIRTIO_ISO=/var/lib/windows/iso/virtio-win.iso
+OVMF_CODE=/usr/share/OVMF/OVMF_CODE_4M.fd
+OVMF_VARS=/var/lib/windows/uefi/OVMF_VARS.fd
+
+# --- boot -------------------------------------------------------------------
+# auto -> CD-ROM while the install marker is absent, disk afterwards
+VM_BOOT_DEVICE=auto
+VM_INSTALL_MARKER=/var/lib/windows/state/windows_installed
+
+# --- networking -------------------------------------------------------------
+# RDP is forwarded to 127.0.0.1 only; ngrok provides the public endpoint.
+VM_HOSTFWD_RDP=3389
+
+# --- display / input --------------------------------------------------------
+VM_VGA=std
+VM_DISPLAY=none
+VM_USB_TABLET=true
+
+# --- acceleration policy ----------------------------------------------------
+KVM_REQUIRED=true
+ENABLE_TCG_FALLBACK=false
+
+# --- lifecycle --------------------------------------------------------------
+VM_START_TIMEOUT=180
+VM_SHUTDOWN_TIMEOUT=180
+VM_MONITOR_TIMEOUT=10

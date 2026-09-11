@@ -1,0 +1,114 @@
+# =============================================================================
+# render.yaml - Render Blueprint for the Windows 10 VM service
+#
+# NOTE: This Blueprint mirrors the production service configuration. The
+# service is intentionally a SINGLE-INSTANCE private service with a persistent
+# disk - a disk cannot be shared between instances and Windows must not be
+# horizontally scaled.
+#
+# Do NOT hard-code secrets here. NGROK_AUTHTOKEN uses `sync: false` so Render
+# prompts for it / stores it as a secret.
+#
+# Render limitation: `healthCheckPath` is documented for web services only.
+# The container still exposes GET /health locally for diagnostics and for the
+# Docker HEALTHCHECK; Render's private network routing performs its own checks.
+#
+# Compute plan: 8c-32g is the documented Render compute plan matching the
+# recommended 8 CPU / 32 GB allocation. Change `plan:` if a different size is
+# required. Region can be changed before first creation only.
+# =============================================================================
+
+services:
+  - type: pserv
+    name: win10
+    runtime: docker
+    repo: https://github.com/dynamite-ai-coder/win10
+    branch: main
+    region: frankfurt # documented in RENDER.md; cannot be changed after creation
+    plan: 8c-32g
+    numInstances: 1
+    autoDeployTrigger: commit
+    maxShutdownDelaySeconds: 300 # allow ACPI shutdown of Windows to finish
+    dockerfilePath: ./Dockerfile
+    dockerContext: .
+    disk:
+      name: win10-data
+      mountPath: /var/lib/windows
+      sizeGB: 150
+
+    envVars:
+      # --- service -----------------------------------------------------------
+      - key: PORT
+        value: "10000"
+      - key: DEBUG_MODE
+        value: "false"
+      - key: STATUS_API_TOKEN
+        generateValue: true # protects GET /status; view/rotate in the Dashboard
+      - key: STATUS_API_ALLOW_UNAUTH
+        value: "false"
+
+      # --- acceleration policy ----------------------------------------------
+      - key: KVM_REQUIRED
+        value: "true"
+      - key: ENABLE_TCG_FALLBACK
+        value: "false"
+      - key: KVM_TEST_ONLY
+        value: "true" # first deploy: diagnostics only until KVM is proven
+      - key: VM_AUTOSTART
+        value: "false" # prove KVM first; set true after a successful KVM test
+
+      # --- VM resources ------------------------------------------------------
+      - key: VM_MEMORY_MB
+        value: "22528"
+      - key: VM_CPUS
+        value: "6"
+      - key: VM_NAME
+        value: windows10
+      - key: VM_MACHINE
+        value: q35
+      - key: VM_CPU_MODEL
+        value: host
+
+      # --- persistent storage ------------------------------------------------
+      - key: VM_DATA_DIR
+        value: /var/lib/windows
+      - key: VM_DISK
+        value: /var/lib/windows/windows10.qcow2
+      - key: VM_DISK_SIZE_GB
+        value: "120"
+      - key: VM_DISK_AUTOCREATE
+        value: "true"
+      - key: VM_DISK_BUS
+        value: virtio
+      - key: VM_DISK_CACHE
+        value: writeback
+      - key: WINDOWS_ISO
+        value: /var/lib/windows/iso/windows10.iso
+      - key: WINDOWS_ISO_URL
+        sync: false # optional; admin-supplied download URL (never commit an ISO)
+      - key: VIRTIO_ISO
+        value: /var/lib/windows/iso/virtio-win.iso
+      - key: VIRTIO_ISO_URL
+        sync: false # optional; admin-supplied virtio-win URL
+      - key: OVMF_VARS
+        value: /var/lib/windows/uefi/OVMF_VARS.fd
+      - key: VM_BOOT_DEVICE
+        value: auto
+
+      # --- networking --------------------------------------------------------
+      - key: VM_HOSTFWD_RDP
+        value: "3389"
+
+      # --- ngrok -------------------------------------------------------------
+      - key: NGROK_ENABLED
+        value: "false" # set true after adding the authtoken
+      - key: NGROK_REQUIRED
+        value: "false"
+      - key: NGROK_AUTHTOKEN
+        sync: false # SECRET - stored in the Render secret store, never here
+      - key: NGROK_TUNNELS
+        value: rdp # "rdp" (TCP 3389) and/or "api" (HTTPS status API)
+      - key: NGROK_RDP_ADDR
+        value: "3389"
+      - key: NGROK_API_ADDR
+        value: "10000"
