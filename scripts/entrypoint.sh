@@ -8,13 +8,14 @@
 #   1.  Validate environment variables
 #   2.  Optional DEBUG_MODE diagnostics (no secrets)
 #   3.  Check /dev/kvm and probe QEMU KVM acceleration
-#   4.  Validate the persistent disk mount
-#   5.  Prepare/verify the QCOW2 disk and UEFI variable store
-#   6.  Start QEMU (unless KVM_TEST_ONLY / VM_AUTOSTART=false)
-#   7.  Wait for VM availability
-#   8.  Start the ngrok tunnel(s)
-#   9.  Start the status/health HTTP API
-#   10. Supervise children and shut everything down cleanly on SIGTERM/SIGINT
+#   4.  Start the status/health HTTP API (so Render detects the open port
+#       immediately, even while installation media is being downloaded)
+#   5.  Validate the persistent disk mount
+#   6.  Prepare/verify the QCOW2 disk and UEFI variable store
+#   7.  Start QEMU (unless KVM_TEST_ONLY / VM_AUTOSTART=false)
+#   8.  Wait for VM availability
+#   9.  Start the ngrok tunnel(s)
+#   10. Report status and supervise children; shut down cleanly on SIGTERM/SIGINT
 # =============================================================================
 set -Eeuo pipefail
 
@@ -184,7 +185,7 @@ start_vm_if_requested() {
 }
 
 # ---------------------------------------------------------------------------
-# 9. Status API
+# 4. Status API
 # ---------------------------------------------------------------------------
 start_status_server() {
     log BOOT "Starting status/health API on 0.0.0.0:${PORT}"
@@ -257,14 +258,18 @@ log BOOT "container runtime: pid=$$, port=${PORT}"
 
 run_kvm_check
 
+# Start the status API early: Render scans the container for an open port
+# right after startup, and setup-disk.sh can block for a long time while
+# downloading administrator-supplied installation media.
+date -u +%Y-%m-%dT%H:%M:%SZ > "${STARTED_AT_FILE}.iso"
+date -u +%s > "$STARTED_AT_FILE"
+start_status_server
+
 log DISK "Checking ${VM_DISK}"
 if ! "$SCRIPT_DIR/setup-disk.sh"; then
     log ERROR "persistent storage setup failed"
     exit 1
 fi
-
-date -u +%Y-%m-%dT%H:%M:%SZ > "${STARTED_AT_FILE}.iso"
-date -u +%s > "$STARTED_AT_FILE"
 
 start_vm_if_requested
 
@@ -279,8 +284,6 @@ if is_true "${NGROK_ENABLED:-false}"; then
 else
     log NGROK "Tunnel disabled (NGROK_ENABLED=false)"
 fi
-
-start_status_server
 
 # Report final state.
 if [[ -x "$SCRIPT_DIR/check-vm.sh" ]] && "$SCRIPT_DIR/check-vm.sh" >/dev/null 2>&1; then

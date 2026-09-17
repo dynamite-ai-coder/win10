@@ -39,6 +39,34 @@ is_true() {
     esac
 }
 
+# ngrok may echo the authtoken in its error messages (for example when the
+# token is invalid). Never print raw ngrok output to the container logs
+# without redacting the secret first.
+redact_secrets() {
+    local token="${NGROK_AUTHTOKEN:-}"
+    if [[ -z "$token" ]]; then
+        cat
+        return 0
+    fi
+    local escaped="${token//\\/\\\\}"
+    escaped="${escaped//&/\\&}"
+    escaped="${escaped//|/\\|}"
+    sed "s|${escaped}|***REDACTED***|g"
+}
+
+# Remove the authtoken from the on-disk ngrok log after a failure. The log is
+# created 0600 (umask 077) but it must not retain the secret either.
+redact_log_file() {
+    [[ -f "$NGROK_LOG" ]] || return 0
+    local tmp="${NGROK_LOG}.redacted"
+    if redact_secrets < "$NGROK_LOG" > "$tmp" 2>/dev/null; then
+        chmod 0600 "$tmp"
+        mv -f "$tmp" "$NGROK_LOG"
+    else
+        rm -f "$tmp"
+    fi
+}
+
 pid_is_ngrok() {
     local pid="$1"
     [[ -n "$pid" && "$pid" =~ ^[0-9]+$ && -d "/proc/${pid}" ]] || return 1
@@ -129,9 +157,15 @@ umask 077
 chmod 0600 "$NGROK_CONFIG"
 
 log "starting tunnel(s): ${tunnel_names[*]}"
-log "ports tunneled: rdp->127.0.0.1:${NGROK_RDP_ADDR}, api->127.0.0.1:${NGROK_API_ADDR}"
+for t in "${tunnel_names[@]}"; do
+    case "$t" in
+        rdp) log "port tunneled: rdp (tcp) -> 127.0.0.1:${NGROK_RDP_ADDR}" ;;
+        api) log "port tunneled: api (https) -> 127.0.0.1:${NGROK_API_ADDR}" ;;
+    esac
+done
 
 : > "$NGROK_LOG"
+chmod 0600 "$NGROK_LOG"
 nohup ngrok start "${tunnel_names[@]}" \
     --config "$NGROK_CONFIG" \
     --log stdout \
@@ -145,6 +179,7 @@ urls_ready=false
 while (( SECONDS < deadline )); do
     if ! pid_is_ngrok "$NGROK_PID"; then
         err "ngrok exited during startup - see ${NGROK_LOG}"
+        redact_log_file
         tail -n 20 "$NGROK_LOG" >&2 || true
         rm -f "$NGROK_PID_FILE"
         if is_true "$NGROK_REQUIRED"; then
@@ -152,7 +187,8 @@ while (( SECONDS < deadline )); do
         fi
         exit 0
     fi
-    if curl -fsS "http://127.0.0.1:4040/api/tunnels" -o "${VM_STATE_DIR}/ngrok-api.json" 2>/dev/null; then
+    if curl -fsS --connect-timeout 2 --max-time 5 \
+            "http://127.0.0.1:4040/api/tunnels" -o "${VM_STATE_DIR}/ngrok-api.json" 2>/dev/null; then
         if jq -e '.tunnels | length > 0' "${VM_STATE_DIR}/ngrok-api.json" >/dev/null 2>&1; then
             urls_ready=true
             break
@@ -189,6 +225,7 @@ for name, url in tunnels.items():
         print(f"[NGROK]   {name.upper()} -> {url}")
 PY
 else
+    redact_log_file
     warn "ngrok did not report public URLs within ${NGROK_START_TIMEOUT}s"
     warn "check ${NGROK_LOG}"
     if is_true "$NGROK_REQUIRED"; then

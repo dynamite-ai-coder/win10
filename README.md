@@ -317,6 +317,7 @@ are never included in any response.
 | RDP connection refused | `fDenyTSConnections` must be `0`, TermService running, firewall rule enabled. Verify `NGROK_TUNNELS` contains `rdp` and the ngrok PID is alive. |
 | ngrok did not start | `NGROK_AUTHTOKEN` missing or invalid. Check `NGROK_ENABLED=true` and the `[NGROK]` logs. |
 | `[VM] ... TCG` in status | `ENABLE_TCG_FALLBACK=true` was set. Performance will be extremely slow; this is intentional and clearly reported. |
+| `[DISK][WARN] disk ... does not exist and VM_DISK_AUTOCREATE=false` | Expected in diagnostics/KVM-test mode without a persistent disk. The service keeps running; create the disk (`VM_DISK_AUTOCREATE=true`) before starting the VM. |
 | Disk full | `disk.free_bytes` through `/status`; increase the Render persistent disk size in the Dashboard. |
 | Service restarts lose Windows state | The disk is not mounted at `/var/lib/windows`. Check the Render Disks tab and the `[DISK]` logs. |
 

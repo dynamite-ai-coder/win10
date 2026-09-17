@@ -64,27 +64,33 @@ mkdir -p "${VM_DATA_DIR}/iso" \
 # 2. QCOW2 system disk
 # ---------------------------------------------------------------------------
 disk_created=false
+disk_present=false
 if [[ -f "$VM_DISK" ]]; then
+    disk_present=true
     log "disk exists: ${VM_DISK}"
-else
-    if is_true "$VM_DISK_AUTOCREATE"; then
-        log "creating QCOW2 disk ${VM_DISK} (${VM_DISK_SIZE_GB}G virtual, qcow2 sparse)"
-        if ! qemu-img create -f qcow2 "$VM_DISK" "${VM_DISK_SIZE_GB}G"; then
-            err "failed to create ${VM_DISK}"
-            exit 1
-        fi
-        disk_created=true
-    else
-        err "disk ${VM_DISK} does not exist and VM_DISK_AUTOCREATE=false"
+elif is_true "$VM_DISK_AUTOCREATE"; then
+    log "creating QCOW2 disk ${VM_DISK} (${VM_DISK_SIZE_GB}G virtual, qcow2 sparse)"
+    if ! qemu-img create -f qcow2 "$VM_DISK" "${VM_DISK_SIZE_GB}G"; then
+        err "failed to create ${VM_DISK}"
         exit 1
     fi
+    disk_created=true
+    disk_present=true
+else
+    # Keep the container (and the status API) alive in KVM-test / diagnostics
+    # mode. start-vm.sh refuses to start the VM without a disk, so this warning
+    # can never result in a QEMU launch with a missing system disk.
+    warn "disk ${VM_DISK} does not exist and VM_DISK_AUTOCREATE=false"
+    warn "the VM will not start until a disk exists (set VM_DISK_AUTOCREATE=true or create it)"
 fi
 
-if ! qemu-img info "$VM_DISK" >/dev/null 2>&1; then
-    err "${VM_DISK} is not a valid QEMU disk image"
-    exit 1
+if [[ "$disk_present" == "true" ]]; then
+    if ! qemu-img info "$VM_DISK" >/dev/null 2>&1; then
+        err "${VM_DISK} is not a valid QEMU disk image"
+        exit 1
+    fi
+    log "disk info: $(qemu-img info --output=json "$VM_DISK" 2>/dev/null | jq -c '{virtual_size:.virtual_size,actual_size:.actual_size,format:.format}' 2>/dev/null || echo 'ok')"
 fi
-log "disk info: $(qemu-img info --output=json "$VM_DISK" 2>/dev/null | jq -c '{virtual_size:.virtual_size,actual_size:.actual_size,format:.format}' 2>/dev/null || echo 'ok')"
 
 # ---------------------------------------------------------------------------
 # 3. UEFI variable store (persistent, per-VM)

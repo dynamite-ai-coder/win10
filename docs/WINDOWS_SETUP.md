@@ -83,8 +83,11 @@ check-vm
 date -u +%Y-%m-%dT%H:%M:%SZ > /var/lib/windows/state/windows_installed
 ```
 
-On future container restarts `-boot order=c` (the QCOW2 disk) is used
-automatically. The QCOW2 disk, UEFI variables and metadata all live on the
+On future container restarts the QCOW2 disk automatically has the highest boot
+priority (`bootindex`), so Windows boots without any further changes. The
+script selects the boot priority from the install marker and `VM_BOOT_DEVICE`;
+it deliberately does not combine `bootindex` with `-boot order=` because QEMU
+documents that mix as undefined firmware behavior. The QCOW2 disk, UEFI variables and metadata all live on the
 persistent disk, so state survives redeploys.
 
 ---

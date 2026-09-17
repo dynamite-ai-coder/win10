@@ -218,41 +218,52 @@ QEMU_ARGS+=(-drive "if=pflash,format=raw,file=${OVMF_VARS}")
 # AHCI controller - used for CD-ROM devices and optionally the system disk.
 QEMU_ARGS+=(-device "ich9-ahci,id=ahci")
 
+# Boot priority. QEMU explicitly warns that mixing the `-boot order=` parameter
+# with device `bootindex` properties gives undefined firmware behavior, so the
+# project uses bootindex only. The CD-ROM wins the first boot (when no install
+# marker exists and media is present), the persistent disk wins afterwards.
+if [[ -f "$VM_INSTALL_MARKER" || "$VM_BOOT_DEVICE" == "disk" ]]; then
+    boot_from_cd=false
+    boot_reason="persistent disk (installation marker present)"
+elif [[ "$VM_BOOT_DEVICE" == "cdrom" || ( "$VM_BOOT_DEVICE" == "auto" && -f "$WINDOWS_ISO" ) ]]; then
+    boot_from_cd=true
+    boot_reason="CD-ROM (Windows installation)"
+else
+    boot_from_cd=false
+    boot_reason="persistent disk (no installation media)"
+fi
+if [[ "$boot_from_cd" == "true" ]]; then
+    disk_bootindex=2
+    cd_bootindex=1
+else
+    disk_bootindex=1
+    cd_bootindex=3
+fi
+log "boot device: ${boot_reason}"
+
 # System disk.
 case "$VM_DISK_BUS" in
     virtio)
         # VirtIO block: best performance with virtio-win drivers.
         QEMU_ARGS+=(-drive "file=${VM_DISK},if=none,id=disk0,format=qcow2,cache=${VM_DISK_CACHE},discard=unmap")
-        QEMU_ARGS+=(-device "virtio-blk-pci,drive=disk0,id=disk0,bootindex=1")
+        QEMU_ARGS+=(-device "virtio-blk-pci,drive=disk0,id=disk0,bootindex=${disk_bootindex}")
         ;;
     sata)
         QEMU_ARGS+=(-drive "file=${VM_DISK},if=none,id=disk0,format=qcow2,cache=${VM_DISK_CACHE}")
-        QEMU_ARGS+=(-device "ide-hd,drive=disk0,bus=ahci.0,bootindex=1")
+        QEMU_ARGS+=(-device "ide-hd,drive=disk0,bus=ahci.0,bootindex=${disk_bootindex}")
         ;;
 esac
 
 # Installation media (CD-ROM). Missing ISOs are simply not attached.
 if [[ -f "$WINDOWS_ISO" ]]; then
     QEMU_ARGS+=(-drive "file=${WINDOWS_ISO},if=none,id=cd0,media=cdrom,readonly=on,format=raw")
-    QEMU_ARGS+=(-device "ide-cd,drive=cd0,bus=ahci.1")
+    QEMU_ARGS+=(-device "ide-cd,drive=cd0,bus=ahci.1,bootindex=${cd_bootindex}")
 else
     warn "Windows installation ISO not found at ${WINDOWS_ISO} - no CD-ROM attached"
 fi
 if [[ -f "$VIRTIO_ISO" ]]; then
     QEMU_ARGS+=(-drive "file=${VIRTIO_ISO},if=none,id=cd1,media=cdrom,readonly=on,format=raw")
     QEMU_ARGS+=(-device "ide-cd,drive=cd1,bus=ahci.2")
-fi
-
-# Boot order: install from CD when no installation marker exists yet.
-if [[ -f "$VM_INSTALL_MARKER" || "$VM_BOOT_DEVICE" == "disk" ]]; then
-    log "boot device: persistent disk"
-    QEMU_ARGS+=(-boot "order=c,menu=on")
-elif [[ "$VM_BOOT_DEVICE" == "cdrom" || ( "$VM_BOOT_DEVICE" == "auto" && -f "$WINDOWS_ISO" ) ]]; then
-    log "boot device: CD-ROM (Windows installation)"
-    QEMU_ARGS+=(-boot "order=d,menu=on")
-else
-    log "boot device: persistent disk (no installation media)"
-    QEMU_ARGS+=(-boot "order=c,menu=on")
 fi
 
 # Networking: user mode (SLIRP). RDP is forwarded to 127.0.0.1 only, so
@@ -294,7 +305,10 @@ log "Starting Windows 10 (PID file: ${PID_FILE})"
 log "command: qemu-system-x86_64 ${QEMU_ARGS[*]}"
 
 : > "$QEMU_LOG"
-nohup qemu-system-x86_64 "${QEMU_ARGS[@]}" >>"$QEMU_LOG" 2>&1 &
+# 9>&- closes the flock file descriptor so the long-lived QEMU process does
+# not keep the start lock held; otherwise later invocations could never run
+# the "QEMU already running" check.
+nohup qemu-system-x86_64 "${QEMU_ARGS[@]}" >>"$QEMU_LOG" 2>&1 9>&- &
 QEMU_PID=$!
 
 # A running process must still be alive after a short grace period.
@@ -329,11 +343,17 @@ while (( SECONDS < deadline )); do
     sleep 2
 done
 
+if [[ "$state" != "running" && "$state" != "paused" ]]; then
+    err "QEMU did not report a running VM within ${VM_START_TIMEOUT}s (last state: ${state:-unknown})"
+    err "QEMU PID ${QEMU_PID} was left running - inspect ${QEMU_LOG} and the monitor socket"
+    exit 1
+fi
+
 if [[ "$ACCEL" == "kvm" ]]; then
     log "KVM acceleration enabled"
 else
     warn "KVM UNAVAILABLE - USING TCG SOFTWARE EMULATION"
 fi
-log "VM ${VM_NAME} status: ${state:-unknown} (PID ${QEMU_PID})"
+log "VM ${VM_NAME} status: ${state} (PID ${QEMU_PID})"
 log "RDP forwarded to 127.0.0.1:${VM_HOSTFWD_RDP} (tunnel only, not public)"
 exit 0
