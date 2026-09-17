@@ -90,3 +90,14 @@ Tasks:
 - current hashrate
 
 Before making changes, inspect the existing system and show me what will be installed/changed. If a required value is missing, ask me for it rather than guessing.
+
+
+Tak — XMRig może działać na Alpine Linux ARM64 (aarch64), ale jest trochę więcej pracy niż na Ubuntu.
+Najważniejsze:
+Alpine ARM64/aarch64: ✅
+Tryb SSH/terminal: ✅
+CPU mining RandomX: ✅, jeśli CPU obsługuje wymagane instrukcje
+systemd: ❌ Alpine używa OpenRC, więc prompt trzeba zmienić
+musl zamiast glibc: trzeba uwzględnić przy instalacji/budowaniu XMRig
+XMRig HTTP API: ✅
+workers.xmrig.info: konfiguracja zależy od aktualnego sposobu integracji/API
