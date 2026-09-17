@@ -1,0 +1,9 @@
+services:
+  - type: web
+    name: render-ssh-service
+    runtime: docker
+    dockerfilePath: ./Dockerfile
+    plan: starter
+    region: frankfurt
+    healthCheckPath: /health
+    autoDeploy: true
