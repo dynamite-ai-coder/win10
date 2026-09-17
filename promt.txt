@@ -1,0 +1,92 @@
+You are a Linux/DevOps engineer.
+
+I want to set up ONE test XMRig worker on an Ubuntu VPS that I own and where cryptocurrency mining is explicitly permitted by the hosting provider.
+
+Goal:
+
+- Install XMRig on Ubuntu in terminal/SSH mode only.
+- Configure it as a single worker/rig.
+- Enable XMRig's HTTP API for monitoring.
+- Give the worker a unique rig ID.
+- Run XMRig as a systemd service so it automatically starts after reboot.
+- Keep the configuration easy to modify later.
+- Do NOT install a desktop environment or GUI.
+
+Important:
+
+- Do not use Render or any hosting provider that prohibits cryptocurrency mining.
+- Do not implement stealth, persistence mechanisms designed to evade detection, resource-limit bypasses, or security-control bypasses.
+- Do not hardcode credentials or API keys into source code.
+- Ask me for the XMR wallet address, mining pool URL/port, and worker name if they are not already available.
+- Never invent a wallet address or credentials.
+
+Tasks:
+
+1. Detect the Ubuntu version, CPU model, number of CPU cores/threads, available RAM, and architecture.
+
+2. Install all required dependencies for compiling/running XMRig.
+
+3. Install the current stable XMRig release using a reputable official source. Prefer an official package/release or build from the official XMRig repository.
+
+4. Create a dedicated non-root system user named "xmrig".
+
+5. Create a configuration file at:
+   "/etc/xmrig/config.json"
+
+6. Configure:
+   
+   - mining pool URL and port
+   - XMR wallet address
+   - worker/rig ID
+   - CPU mining
+   - reasonable CPU usage
+   - HTTP API enabled on localhost only
+   - no GUI
+   - no unnecessary network services
+
+7. Create:
+   "/etc/systemd/system/xmrig.service"
+   
+   The service must:
+   
+   - run as the "xmrig" user
+   - start automatically after networking is available
+   - restart if XMRig unexpectedly exits
+   - not run as root
+   - use "/etc/xmrig/config.json"
+
+8. Enable and start the service.
+
+9. Verify:
+   
+   - "systemctl status xmrig"
+   - XMRig logs
+   - current hashrate
+   - accepted/rejected shares
+   - HTTP API availability on localhost
+   - that the process is running as the "xmrig" user
+
+10. Provide commands for:
+
+- viewing live logs
+- restarting XMRig
+- stopping XMRig
+- checking status
+- checking the API
+- editing the configuration
+- updating XMRig
+
+11. Explain exactly how to connect the worker to "workers.xmrig.info" if that service supports the selected XMRig API/configuration. Do not expose the API publicly unless this is explicitly required and secured.
+
+12. At the end, print a concise summary containing:
+
+- CPU
+- threads used
+- XMRig version
+- worker name
+- pool
+- API address
+- service status
+- current hashrate
+
+Before making changes, inspect the existing system and show me what will be installed/changed. If a required value is missing, ask me for it rather than guessing.
