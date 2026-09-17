@@ -17,6 +17,30 @@ Szablon usługi web na [Render](https://render.com) (Docker) z natywnym dostępe
 - **płatny plan instancji** — Free nie obsługuje SSH ani Shell,
 - publiczny klucz SSH dodany do konta Render.
 
+## Szybki start (SSH)
+
+1. Wygeneruj klucz SSH:
+
+   ```bash
+   ./scripts/setup-ssh-key.sh
+   ```
+
+2. Skopiuj wypisany klucz publiczny do Render: **Account Settings → SSH Public Keys → Add SSH Key**.
+
+3. Wdróż usługę (Blueprint `render.yaml` lub dashboard/API).
+
+4. Sprawdź, że usługa działa:
+
+   ```bash
+   curl https://<twoj-serwis>.onrender.com/health
+   ```
+
+5. Połącz się przez SSH:
+
+   ```bash
+   ./scripts/connect.sh srv-XXXXXXXX frankfurt
+   ```
+
 ## Deploy
 
 1. Repozytorium na GitHubie:
@@ -42,6 +66,9 @@ Szablon usługi web na [Render](https://render.com) (Docker) z natywnym dostępe
 ## Klucz SSH
 
 ```bash
+./scripts/setup-ssh-key.sh          # generuje ~/.ssh/id_ed25519 i wypisuje klucz publiczny
+
+# albo ręcznie:
 ssh-keygen -t ed25519 -f ~/.ssh/id_ed25519
 ```
 
@@ -64,6 +91,20 @@ ssh srv-XXXXXXXX-d4e5f@ssh.frankfurt.render.com
 ```
 
 Adresy SSH: `ssh.<region>.render.com` dla regionów `oregon`, `ohio`, `virginia`, `frankfurt`, `singapore`.
+
+## Wdrożona usługa
+
+| Pole | Wartość |
+| --- | --- |
+| Service ID | `srv-dai0rm2jnfac73afpthg` |
+| Region | `frankfurt` |
+| URL | https://win10-yk0n.onrender.com |
+| SSH | `srv-dai0rm2jnfac73afpthg@ssh.frankfurt.render.com` |
+| Plan | `8c-16g` (w `render.yaml` jest `starter` — zmień, jeśli chcesz inny plan) |
+
+```bash
+ssh srv-dai0rm2jnfac73afpthg@ssh.frankfurt.render.com
+```
 
 ## Endpointy
 
